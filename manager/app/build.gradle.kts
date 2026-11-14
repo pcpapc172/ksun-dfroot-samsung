@@ -47,6 +47,9 @@ android {
     packaging {
         jniLibs {
             useLegacyPackaging = true
+            // ksud is an executable daemon packaged as a native library.
+            // Preserve its exact bytes instead of applying JNI-library stripping.
+            keepDebugSymbols += "**/libksud.so"
         }
         resources {
             // https://stackoverflow.com/a/58956288
