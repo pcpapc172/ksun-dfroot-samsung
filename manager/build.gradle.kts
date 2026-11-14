@@ -11,6 +11,10 @@ plugins {
     alias(libs.plugins.lsplugin.cmaker)
 }
 
+val targetAbis = providers.gradleProperty("targetAbis").orNull
+    ?.split(",")?.map(String::trim)?.filter(String::isNotEmpty)
+    ?: listOf("arm64-v8a", "x86_64", "riscv64")
+
 cmaker {
     default {
         arguments.addAll(
@@ -18,7 +22,7 @@ cmaker {
                 "-DANDROID_STL=none",
             )
         )
-        abiFilters("arm64-v8a", "x86_64", "riscv64")
+        abiFilters(*targetAbis.toTypedArray())
     }
     buildTypes {
         if (it.name == "release") {
@@ -71,7 +75,7 @@ subprojects {
                     versionName = managerVersionName
                 }
                 ndk {
-                    abiFilters += listOf("arm64-v8a", "x86_64", "riscv64")
+                    abiFilters += targetAbis
                 }
             }
 

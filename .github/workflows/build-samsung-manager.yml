@@ -1,0 +1,103 @@
+name: Build Samsung DFRoot Manager
+on:
+  workflow_dispatch:
+  push:
+    branches: [samsung-dfroot-v22]
+    paths:
+      - .github/workflows/build-samsung-manager.yml
+permissions:
+  contents: read
+jobs:
+  lkm:
+    uses: ./.github/workflows/ddk-lkm-ksu.yml
+    with:
+      kmi: android16-6.12
+      manager_package: com.rifsxd.ksunext
+      expected_manager_size: '1021'
+      expected_manager_hash: 90e04ac03775da1e62643e13473c8b4914962ee7aeb95a08338580b4a72655b7
+  manager:
+    needs: lkm
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: nttld/setup-ndk@v1
+        id: ndk
+        with:
+          ndk-version: r29
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            userspace/ksuinit
+            userspace/ksud
+      - uses: actions/download-artifact@v7
+        with:
+          name: aarch64-android16-6.12-ksu-lkm
+          path: userspace/ksud/bin/aarch64
+      - name: Build arm64 ksuinit and ksud with the patched module
+        env:
+          ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
+        run: |
+          set -euo pipefail
+          LLVM_BIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          export PATH="$LLVM_BIN:$PATH"
+          export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$LLVM_BIN/aarch64-linux-android26-clang"
+          export CC_aarch64_linux_android="$LLVM_BIN/aarch64-linux-android26-clang"
+          export CXX_aarch64_linux_android="$LLVM_BIN/aarch64-linux-android26-clang++"
+          export AR_aarch64_linux_android="$LLVM_BIN/llvm-ar"
+          export BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android="--sysroot=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/sysroot -I$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/aarch64-linux-android"
+          BUILTINS="$($CC_aarch64_linux_android --print-resource-dir)/lib/linux/libclang_rt.builtins-aarch64-android.a"
+          RUSTFLAGS="-C target-feature=+crt-static -C link-arg=-Wl,-z,max-page-size=16384 -C link-arg=$BUILTINS" cargo build --locked --target aarch64-linux-android --release --manifest-path userspace/ksuinit/Cargo.toml
+          cp userspace/ksuinit/target/aarch64-linux-android/release/ksuinit userspace/ksud/bin/aarch64/ksuinit
+          "$LLVM_BIN/clang" --target=aarch64-linux-android26 -c -nostdlib -o userspace/ksud/.lkm_image_bootstrap.o userspace/ksud/src/lkm_image_bootstrap.S
+          RUSTFLAGS="-C link-arg=-Wl,-z,max-page-size=16384" cargo build --locked --target aarch64-linux-android --release --manifest-path userspace/ksud/Cargo.toml
+          mkdir -p manager/app/src/main/jniLibs/arm64-v8a
+          cp userspace/ksud/target/aarch64-linux-android/release/ksud manager/app/src/main/jniLibs/arm64-v8a/libksud.so
+      - uses: gradle/actions/setup-gradle@v5
+      - name: Build signed arm64 Manager
+        working-directory: manager
+        env:
+          SIGNING_KEY: ${{ secrets.SAMSUNG_KSUN_KEYSTORE }}
+          ORG_GRADLE_PROJECT_KEYSTORE_PASSWORD: ${{ secrets.SAMSUNG_KSUN_KEYSTORE_PASSWORD }}
+          ORG_GRADLE_PROJECT_KEY_PASSWORD: ${{ secrets.SAMSUNG_KSUN_KEYSTORE_PASSWORD }}
+          ORG_GRADLE_PROJECT_KEY_ALIAS: samsung-ksun
+        run: |
+          set -euo pipefail
+          test -n "$SIGNING_KEY"
+          KEY_FILE="$RUNNER_TEMP/samsung-ksun.p12"
+          printf '%s' "$SIGNING_KEY" | base64 -d > "$KEY_FILE"
+          chmod 600 "$KEY_FILE"
+          trap 'rm -f "$KEY_FILE"' EXIT
+          export ORG_GRADLE_PROJECT_KEYSTORE_FILE="$KEY_FILE"
+          ./gradlew --no-daemon -PtargetAbis=arm64-v8a assembleRelease
+      - name: Verify signing certificate and daemon packaging
+        run: |
+          set -euo pipefail
+          APK=$(find manager/app/build/outputs/apk/release -name '*.apk' -print -quit)
+          test -n "$APK"
+          SDK_BUILD_TOOLS=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)
+          "$SDK_BUILD_TOOLS/apksigner" verify --verbose --print-certs "$APK" | tee certificate.txt
+          grep -qi '90e04ac03775da1e62643e13473c8b4914962ee7aeb95a08338580b4a72655b7' certificate.txt
+          unzip -p "$APK" lib/arm64-v8a/libksud.so > "$RUNNER_TEMP/apk-ksud"
+          cmp "$RUNNER_TEMP/apk-ksud" manager/app/src/main/jniLibs/arm64-v8a/libksud.so
+          mkdir -p samsung-manager
+          cp "$APK" samsung-manager/KernelSU-Next-Samsung-DFRoot-arm64.apk
+          cp certificate.txt samsung-manager/
+          sha256sum samsung-manager/*.apk > samsung-manager/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v7
+        with:
+          name: samsung-dfroot-manager-arm64
+          path: samsung-manager/
+      - uses: actions/upload-artifact@v7
+        with:
+          name: samsung-dfroot-ksud-arm64
+          path: userspace/ksud/target/aarch64-linux-android/release/ksud
