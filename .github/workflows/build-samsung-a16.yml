@@ -4,7 +4,10 @@ on:
 permissions:
   contents: read
 jobs:
-  android16-6-12:
+  samsung-kmi:
+    strategy:
+      matrix:
+        kmi: [android16-6.12, android17-6.18]
     uses: ./.github/workflows/ddk-lkm-ksu.yml
     with:
-      kmi: android16-6.12
+      kmi: ${{ matrix.kmi }}

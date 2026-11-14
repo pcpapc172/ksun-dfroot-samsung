@@ -1,6 +1,6 @@
 # Samsung DFRoot compatibility port
 
-Target: Galaxy A16 4G SM-A165F, firmware A165FXXSADZF2, arm64 kernel 6.12.38-android16-5, 4 KiB pages (user supplied). This branch ports the Samsung compatibility implementation from diabl0w/KernelSU samsung-v2.2 (b38f4096) onto KernelSU Next dev (3987e4d5). It does not provide a new root exploit.
+Target: Galaxy A16 4G SM-A165F. The user reports it has now updated to Android 17; its current build/kernel/KMI is pending confirmation. The earlier screenshot (A165FXXSADZF2, 6.12.38-android16-5, 4 KiB pages) is historical and must not be used to select a current module. This branch ports the Samsung compatibility implementation from diabl0w/KernelSU samsung-v2.2 (b38f4096) onto KernelSU Next dev (3987e4d5). It does not provide a new root exploit.
 
 ## Scope
 
@@ -18,6 +18,6 @@ DFRoot's bootstrap stages the selected manager's native libksud.so, invokes `ksu
 
 ## Build and validation
 
-The `Build Samsung A16 LKM` manual workflow builds the android16-6.12 module through the repository's existing DDK workflow. The existing manager/release workflows must also package that patched module into ksud. A locally signed APK needs matching manager signature parameters in the module build; keep the signing key private.
+The `Build Samsung A16 LKM` manual workflow offers both android16-6.12 and android17-6.18 build checks through the repository's existing DDK workflow. The running kernel, rather than Android userspace version, determines which KMI is correct. The existing manager/release workflows must also package that patched module into ksud. A locally signed APK needs matching manager signature parameters in the module build; keep the signing key private.
 
 Compilation and device validation are tracked separately. A successful module build does not establish A16 runtime compatibility. No phone changes, exploit attempts, or flashing are part of this source port. Kernel modules from this branch are experimental until tested on the exact target firmware. Module unloading and recovery paths require separate validation.
