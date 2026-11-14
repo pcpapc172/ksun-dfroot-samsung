@@ -1,0 +1,10 @@
+name: Build Samsung A16 LKM
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  android16-6-12:
+    uses: ./.github/workflows/ddk-lkm-ksu.yml
+    with:
+      kmi: android16-6.12
